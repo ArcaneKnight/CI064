@@ -1,32 +1,44 @@
-//#include "cMIPS/include/uart_defs.h"
+#include "cMIPS.h"
+#include "uart_defs.h"
+//#include "../tests/uart_irx.c"
+#include "fib_vet.h"
+//#include "../include/handlers.s"
 
 //As funções proberx() e probetx() retornam os valores de nrx e ntx, respectivamente. A função iostat() retorna o conteúdo do registrador de status da UART, e a função ioctl() permite escrever no seu registrador de controle.
-# define Q_SZ (1 < <4) // 16 , MUST be a power of two
+#define D_SZ 100
+#define U_DATA 0
+#define U_FLAG 1
 
-int proberx ( void ); // retorna nrx
-int probetx ( void ); // retorna ntx
-Tstatus iostat ( void ); // retorna inteiro com status no byte menos sign .
-void ioctl ( Tcontrol ); // escreve byte menos sign no reg . de controle
-char Getc ( void ); // retira octeto da fila , decrementa nrx
-void Putc ( char octeto); // insere octeto na fila , decrementa ntx
+// operate at 1/4 of the highest data rate
+#define SPEED 4   
+extern UARTdriver Ud;
+Tserial volatile *uart;
+char filaT[1024];
+int t_h,  t_t;
+
+char filaR[256];
+int r_h, r_t;
 
 
 
 char Getc ( void ) {
+
 	char c ;
-	disable_interr (); // exclui handler enquanto altera Ud
+	disableInterr (); // exclui handler enquanto altera Ud
 
 	Ud . nrx -= 1;
 	c = Ud . rx_q [ Ud . rx_hd ];
 	Ud . rx_hd = ( Ud . rx_hd + 1) & ( Q_SZ -1); // ( hd ++) mod Q_SZ
 
-	enable_interr ();
+	enableInterr ();
 	return c ;
 }
 
 
 void Putc(char octeto){
-	disable_interr();
+
+	int state;
+	disableInterr();
 
 	Ud.ntx-=1;
 	Ud.tx_q[ Ud.tx_tl ] = octeto;
@@ -37,7 +49,7 @@ void Putc(char octeto){
 		state=1;
 	}
 
-	enable_interr();
+	enableInterr();
 }
 
 
@@ -55,35 +67,26 @@ Tstatus iostat ( void ){
 
 
 void ioctl ( Tcontrol novo ){
-	ctrl = novo;
+	uart->ctl = novo;
 } 
-#include "cMIPS.h"
 
-#include "uart_defs.h"
 
-#define U_DATA 0
-#define U_FLAG 1
 
-// operate at 1/4 of the highest data rate
-#define SPEED 2   
 
 
 int main(void) {
-	Tserial volatile *uart;
 	Tcontrol ctrl;
 	Tstatus stat;
-	extern   int Ud[2];  // declared in include/handlers.s
+	volatile UARTdriver *algo;  // declared in include/handlers.s
 	volatile int *bfr;
 	char c;
 	int num, aux, i;
 
-	char filaT[1024];
-	int t_h,  t_t;
+	Ud.nrx = 0;
+  	Ud.rx_hd = 0;
+  	Ud.rx_tl = 0; 
 
-	char filaR[256]
-	int r_h,  r_t;
-
-	bfr = (int *)Ud;
+	algo = &Ud;
 	uart = (void *)IO_UART_ADDR; // bottom of UART address range
 
 	ctrl.ign   = 0;
@@ -104,8 +107,13 @@ int main(void) {
 	ctrl.speed = SPEED;  // operate at 1/4 of the highest data rate
 	uart->ctl = ctrl;
 	
+	Ud.nrx = 0;
+  	Ud.rx_hd = 0;
+  	Ud.rx_tl = 0; 
+	
 //preenche a fila;
 	do{
+		enableInterr();
 		while(proberx()>0);
 		do{
 			c=Getc();
@@ -121,16 +129,15 @@ int main(void) {
 		num=0;
 		i=1;
 		while (r_h!=r_t){
-			num += i*c2i(fila[r_t]);
+			num += i*c2i(filaR[r_t]);
 			r_t = (r_t+1)%256;
 			i*=10;
 		}
 		//interpretaçao
-		num=fibo(num);
-
+		num= dat[num];
 
 		//envia para fila de transmiçao
-		aux=0 
+		aux=0; 
 		i=10;
 		while(num%i>0){
 			i*=10;
@@ -143,7 +150,7 @@ int main(void) {
 			aux++;
 		}
 		while (aux<=8){
-			filaT[t_h]='0'
+		  filaT[t_h]='0';
 			t_h= (t_h+1)%1024;
 			aux++;
 		}
@@ -154,6 +161,9 @@ int main(void) {
 				t_t= (t_t+1)%1024;
 			}
 		}
-		}while(c!=EOT);
+		
+	}while(c!=EOT);
 
+		print(0);
+		return 0;
 }
