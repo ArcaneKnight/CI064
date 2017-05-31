@@ -13,7 +13,7 @@ lw    $k1, USTAT($a0) 	    # Read status
 sw    $k1, 0*4($k0)         #  and save UART status to memory
 
 li    $a1, U_rx_irq	    # remove interrupt request
-sw    $a1, UINTER($t0)
+sw    $a1, UINTER($a0)
 
 
 and   $a1, $k1, $a1         # Is this reception?
@@ -24,7 +24,7 @@ nop
 
 transmit:
 	li    $a1, U_tx_irq	    # remove interrupt request
-	sw    $a1, UINTER($t0)
+	sw    $a1, UINTER($a0)
 
 	and   $a1, $k1, $a1         # Is this transmission?
 	beq   $a1, $zero, UARTret   #   no, ignore it and return
@@ -109,9 +109,9 @@ nop
 #Transmission FIFO is empty
 
 underrun:
-	lw $a2, USTAT($t0)
+	lw $a2, USTAT($a0)
 	ori $a2, $a2, 0x40
-	sw $a2, USTAT($t0) # bit TVazio =1
+	sw $a2, USTAT($a0) # bit TVazio =1
 	j UARTret
 	nop
 
