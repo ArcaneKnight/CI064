@@ -36,31 +36,27 @@ transmit:
 u_rx:
 	lw    $a1, UDATA($a0) 	    # Read data from device
 
-	lui   $a2, %hi(Ud)          # get address for data & flag
+	lui   $a2, %hi(Ud)
 	ori   $a2, $a2, %lo(Ud)
-
-	# Reception space verification
-
-	lw $a3, NRX($a2)
-	slti $a3, $a3, Q_SZ
-	beq	$a3, $zero, overrun #Reception FIFO is full
+	
+	lw $a3, NRX($a2)    # a3 <= nrx
 	nop
+	addi $a3, $a3, 1    # nrx++
+	sw $a3, NRX($a2)    # save nrx
 
+	# A fila eh circular por isso tem que ser rx_tail modulo 16
 
-	lw $a3, RXTL($a2)  #a3 <= rxtail
-	nop
+	lw  $a3, RXTL($a2) # a3 <= rx_tail
+	add $a2, $a2, $a3 # a2 <=  Ud + rx_tail
 
-	add $a2, $a2, $a3 	#ud +rx_tail
-	sb $a1, RX_Q($a2)  # rx_q[rx_tail] <=data
+	sb $a1, RX_Q($a2)     # rx_q[rx_tail] <= UDATA
+	
+	lui   $a2, %hi(Ud)
+    ori   $a2, $a2, %lo(Ud)
 
-	addi $a3, $a3, 1 # rxtail ++
-	andi $a3, $a3 , (Q_SZ -1) # mod
-	sw $a3, RXTL($a2) # rxtail <= rxtail+1
-
-
-	sw    $a1, 0*4($a2)         #   and return from interrupt
-	addiu $a1, $zero, 1
-	sw    $a1, 1*4($a2)         # set flag to signal new arrival
+	addi $a3, $a3, 1     # rx_tail++
+    andi $a3, $a3, 0xf   # modulo 16
+    sw $a3, RXTL($a2)  # save rx_tail
 
 	j transmit
 	nop
@@ -75,36 +71,40 @@ overrun:
 
 	# handle transmission
 _u_tx: 
-	lui   $a2, %hi(Ud)          # get address for data & flag
-	ori   $a2, $a2, %lo(Ud)
+	lui   $a2, %hi(Ud)
+    ori   $a2, $a2, %lo(Ud)
 
-	#Transmission FIFO verification
+	lw $a3, NTX($a2)    # a3 <= ntx
+    
+    addi $a1, $zero, 16
+    beq $a3, $a1, UARTret # if (ntx == 16) { j UARTret}
+    nop
 
-	lw $a3, NTX($a2)
-	slti $a3, $a3, Q_SZ
-	beq	$a3, $zero, underrun #FIFO is empty
-	nop
+    addi $a3, $a3, 1    # ntx++
+    sw $a3, NTX($a2)    # save ntx
 
+	lw  $a3, TXHD($a2) # a3 <= tx_head
+    add $a2, $a2, $a3 # a2 <=  Ud + tx_head
 
-	lw $a3, TXHD($a2)  #a3 <= txhead
-	nop
+    lbu $a1, TX_Q($a2)     # a1 <= tx_q[tx_head]
+	sb $a1, UDATA($a0)   # UDATA <= tx_q[tx_head]
 
-	add $a2, $a2, $a3 	#ud +tx_head
-	lb $a1, TX_Q($a2)  # $a1 <= tx_q[tx_head]
+    lui   $a2, %hi(Ud)          
+    ori   $a2, $a2, %lo(Ud)
 
-	addi $a3, $a3, 1 # txhead ++
-	andi $a3, $a3, (Q_SZ -1) # mod
-	sw $a3, TXHD($a2) # txhead <= txhead+1
-
-	sw    $a1, UDATA($t0) 	    # save data to device
-
-
-	sw    $a1, 0*4($a2)         #   and return from interrupt
-	addiu $a1, $zero, 1
-	sw    $a1, 1*4($a2)         # set flag to signal new arrival
+    addi $a3, $a3, 1     # tx_head++
+    andi $a3, $a3, 0xf   # modulo 16
+    sw $a3, TXHD($a2)  # save tx_head
+    
+    addi $a2, $zero, 0x04 # a2 <= EOT
+    bne $a1, $a2, UARTret # if (UDATA == EOT) {
+    nop
+    lw $a3, UCTRL($a0)
+    andi $a3, $a3, 0xef
+    sw $a3, UCTRL($a0) # }
 
 	j UARTret
-nop
+	nop
 
 #Transmission FIFO is empty
 
