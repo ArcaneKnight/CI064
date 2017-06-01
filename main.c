@@ -13,12 +13,6 @@
 #define SPEED 4   
 extern UARTdriver Ud;
 Tserial volatile *uart;
-char filaT[1024];
-int t_h,  t_t;
-
-char filaR[256];
-int r_h, r_t;
-
 
 
 char Getc ( void ) {
@@ -34,10 +28,13 @@ char Getc ( void ) {
 	return c ;
 }
 
+int state;
 
 void Putc(char octeto){
+//	 volatile Tserial *uart;  // declared in include/handlers.s
 
-	int state;
+	 uart = (Tserial *)IO_UART_ADDR;
+
 	disableInterr();
 
 	Ud.ntx-=1;
@@ -45,7 +42,8 @@ void Putc(char octeto){
 	Ud . tx_tl = ( Ud . tx_tl + 1) & ( Q_SZ -1); // ( tl ++) mod Q_SZ
 
 	
-	if (Ud . tx_tl== 1 && (state==0)){ //*
+	if (Ud.ntx == 14 && (state==0)){ //*
+	    uart->interr.setTX = 1;
 		state=1;
 	}
 
@@ -54,11 +52,14 @@ void Putc(char octeto){
 
 
 int proberx(){
+
 	return(Ud.nrx);
 }
 
 int probetx(){
+
 	return(Ud.ntx);
+
 }
 
 Tstatus iostat ( void ){
@@ -67,26 +68,32 @@ Tstatus iostat ( void ){
 
 
 void ioctl ( Tcontrol novo ){
-	uart->ctl = novo;
+	Tcontrol ctrl;
+	ctrl = novo;
 } 
 
 
 
-
+#define TESTE 1
 
 int main(void) {
 	Tcontrol ctrl;
 	Tstatus stat;
-	volatile UARTdriver *algo;  // declared in include/handlers.s
-	volatile int *bfr;
+	//volatile UARTdriver *algo;  // declared in include/handlers.s
 	char c;
 	int num, aux, i;
 
-	Ud.nrx = 0;
-  	Ud.rx_hd = 0;
-  	Ud.rx_tl = 0; 
+	char filaT[1024];
+	int t_h,  t_t;
 
-	algo = &Ud;
+	char filaR[256];
+	int r_h, r_t;
+
+	state = 0;
+
+	r_h = r_t = t_h = t_t = 0;
+
+	//algo = &Ud;
 	uart = (void *)IO_UART_ADDR; // bottom of UART address range
 
 	ctrl.ign   = 0;
@@ -96,9 +103,10 @@ int main(void) {
 	ctrl.speed = SPEED;
 	uart->ctl = ctrl; // initizlize UART
 
-	// handler sets flag=[U_FLAg] to 1 after new character is received;
-	// this program resets the flag on fetching a new character from buffer
-	bfr[U_FLAG] = 0;      //   reset flag  
+
+	Ud.nrx = 0;
+  	Ud.rx_hd = 0;
+  	Ud.rx_tl = 0; 
 
 	ctrl.ign   = 0;
 	ctrl.rts   = 1;  // make RTS=1 to activate remote unit
@@ -107,46 +115,44 @@ int main(void) {
 	ctrl.speed = SPEED;  // operate at 1/4 of the highest data rate
 	uart->ctl = ctrl;
 	
-	Ud.nrx = 0;
-  	Ud.rx_hd = 0;
-  	Ud.rx_tl = 0; 
-	
 //preenche a fila;
 	do{
 		enableInterr();
-		while(proberx()>0);
+		while(proberx()==0);
 		do{
 			c=Getc();
-			if((c!=EOT)&& (c!='\n')){
-				
+			if((c!=EOT) && (c!='\n') && (c!=0) ){
+				print(c);
 				filaR[r_h]=c;
-				r_h= (r_h+1)%256;
+				r_h = (r_h+1)%256;
 			}
 		
-		 }while ((c!= EOT)&& (c!='\n'));
+		 }while ((c!= EOT)&& (c!='\n')&& (c!=0));
 
+if(TESTE) print(1);
 		//transformaçao dos octetos e soma
-		num=0;
 		i=1;
 		while (r_h!=r_t){
 			num += i*c2i(filaR[r_t]);
 			r_t = (r_t+1)%256;
-			i*=10;
+			i*=16;    // 16
 		}
 		//interpretaçao
-		num= dat[num];
+		num= dat[5];
+if(TESTE) print(2);
 
 		//envia para fila de transmiçao
 		aux=0; 
-		i=10;
-		while(num%i>0){
-			i*=10;
+		i=16;
+		while(num/i>15){
+			i*=16;  // 16
 		}
+ if(TESTE) print(3);
 
 		while (i != 0){
 			filaT[t_h]= i2c(num%i);
 			t_h = (t_h+1)%1024;
-			i=(int)(i/10);
+			i=(int)(i/16); // 16
 			aux++;
 		}
 		while (aux<=8){
@@ -154,6 +160,19 @@ int main(void) {
 			t_h= (t_h+1)%1024;
 			aux++;
 		}
+if(TESTE) print(4);
+
+		if(probetx()>0){
+			if (t_h!=t_t){
+				Putc(filaT[t_t]);
+				t_t= (t_t+1)%1024;
+			}
+		}
+		
+if(TESTE) print(5);
+		}while(c!=EOT);
+
+
 
 		if(probetx()>0){
 			while (t_h!=t_t){
@@ -161,8 +180,6 @@ int main(void) {
 				t_t= (t_t+1)%1024;
 			}
 		}
-		
-	}while(c!=EOT);
 
 		print(0);
 		return 0;
